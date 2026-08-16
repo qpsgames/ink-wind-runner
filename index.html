@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>推箱子小游戏</title>
+    <style>
+        *{margin:0;padding:0;box-sizing:border-box;font-family:"Microsoft Yahei",sans-serif}
+        body{background:#2c3e50;display:flex;flex-direction:column;align-items:center;padding:30px;color:#fff}
+        h1{margin-bottom:10px}
+        .info{margin-bottom:15px;font-size:16px}
+        #gameBox{
+            background:#34495e;
+            padding:12px;
+            border-radius:8px;
+        }
+        .row{display:flex}
+        .cell{
+            width:42px;height:42px;
+            display:flex;align-items:center;justify-content:center;
+            font-size:28px;
+        }
+        .wall{background:#7f8c8d}
+        .floor{background:#bdc3c7}
+        .target{background:#f1c40f}
+        .btn-group{margin-top:20px;display:flex;gap:10px}
+        button{
+            padding:8px 18px;border:none;border-radius:4px;
+            background:#3498db;color:#fff;font-size:15px;cursor:pointer
+        }
+        button:hover{background:#2980b9}
+        .tip{margin-top:12px;font-size:14px;color:#ccc}
+    </style>
+</head>
+<body>
+    <h1>推箱子</h1>
+    <div class="info">步数：<span id="step">0</span></div>
+    <div id="gameBox"></div>
+    <div class="btn-group">
+        <button onclick="resetLevel()">重置关卡</button>
+        <button onclick="nextLevel()">下一关</button>
+    </div>
+    <div class="tip">键盘方向键 ↑ ↓ ← → 移动角色</div>
+
+<script>
+// 地图定义：0空地 1墙 2箱子 3目标点 4玩家
+const levels = [
+[
+    [1,1,1,1,1,1,1],
+    [1,0,0,0,0,0,1],
+    [1,0,2,0,2,0,1],
+    [1,0,0,4,0,0,1],
+    [1,0,2,0,3,0,1],
+    [1,0,3,0,3,0,1],
+    [1,1,1,1,1,1,1]
+],
+[
+    [1,1,1,1,1,1,1,1],
+    [1,0,0,0,0,0,0,1],
+    [1,0,2,0,2,0,0,1],
+    [1,0,0,0,0,2,0,1],
+    [1,0,4,0,0,0,0,1],
+    [1,3,0,3,0,3,0,1],
+    [1,1,1,1,1,1,1,1]
+]
+];
+
+let currentLv = 0;
+let map = [];
+let playerX,playerY;
+let stepCount = 0;
+
+// 克隆地图
+function cloneMap(lv){
+    const src = levels[lv];
+    let arr = [];
+    for(let y=0;y<src.length;y++){
+        arr.push([...src[y]]);
+    }
+    return arr;
+}
+
+// 渲染游戏
+function render(){
+    const dom = document.getElementById("gameBox");
+    dom.innerHTML = "";
+    for(let y=0;y<map.length;y++){
+        const divRow = document.createElement("div");
+        divRow.className = "row";
+        for(let x=0;x<map[y].length;x++){
+            const cell = document.createElement("div");
+            cell.className = "cell";
+            let val = map[y][x];
+            if(val===1) cell.classList.add("wall");
+            else if(val===3) cell.classList.add("target");
+            else cell.classList.add("floor");
+
+            if(val===4){ cell.innerText="🧑"; playerX=x;playerY=y; }
+            else if(val===2){ cell.innerText="📦"; }
+            else if(val===5){ cell.innerText="📦"; } //箱子在目标点
+            else if(val===6){ cell.innerText="🧑"; } //玩家站目标点
+            divRow.appendChild(cell);
+        }
+        dom.appendChild(divRow);
+    }
+    document.getElementById("step").innerText = stepCount;
+}
+
+// 加载关卡
+function loadLevel(lvIndex){
+    if(lvIndex >= levels.length){
+        alert("恭喜！全部关卡通关！");
+        currentLv = 0;
+    }
+    currentLv = lvIndex;
+    stepCount = 0;
+    map = cloneMap(currentLv);
+    //处理目标点上玩家/箱子标记
+    for(let y=0;y<map.length;y++){
+        for(let x=0;x<map[y].length;x++){
+            if(levels[currentLv][y][x]===3){
+                if(map[y][x]===2) map[y][x]=5;
+                if(map[y][x]===4) map[y][x]=6;
+            }
+        }
+    }
+    render();
+}
+
+function resetLevel(){ loadLevel(currentLv); }
+function nextLevel(){ loadLevel(currentLv+1); }
+
+// 判断胜利
+function checkWin(){
+    for(let y=0;y<map.length;y++){
+        for(let x=0;x<map[y].length;x++){
+            if(map[y][x]===2) return false;
+        }
+    }
+    setTimeout(()=>{alert(`第${currentLv+1}关通关！`);nextLevel();},200);
+}
+
+//移动 dx,dy
+function move(dx,dy){
+    let nx = playerX+dx;
+    let ny = playerY+dy;
+    let cur = map[playerY][playerX];
+    let next = map[ny][nx];
+
+    if(next === 1) return; //撞墙
+
+    //保存当前格子原本是不是目标
+    const isCurTarget = (cur===6);
+    const isNextTarget = (next===3 || next===5);
+
+    //推箱子 next=2普通箱子 next=5箱子在目标
+    if(next===2 || next===5){
+        let nnx = nx+dx;
+        let nny = ny+dy;
+        let nn = map[nny][nnx];
+        if(nn===1 || nn===2 || nn===5) return; //箱子前方墙/箱子推不动
+
+        //箱子移动
+        if(nn===3) map[nny][nnx]=5; //推到目标点
+        else map[nny][nnx]=2;
+
+        //原箱子位置
+        if(next===5) map[ny][nx]=3;
+        else map[ny][nx]=0;
+    }
+
+    //玩家离开旧位置
+    if(isCurTarget) map[playerY][playerX]=3;
+    else map[playerY][playerX]=0;
+
+    //玩家新位置
+    if(isNextTarget) map[ny][nx]=6;
+    else map[ny][nx]=4;
+
+    stepCount++;
+    render();
+    checkWin();
+}
+
+document.addEventListener("keydown",(e)=>{
+    switch(e.key){
+        case "ArrowUp": move(0,-1);break;
+        case "ArrowDown": move(0,1);break;
+        case "ArrowLeft": move(-1,0);break;
+        case "ArrowRight": move(1,0);break;
+    }
+})
+
+//初始化第一关
+loadLevel(0);
+</script>
+</body>
+</html>
