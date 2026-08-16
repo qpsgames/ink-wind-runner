@@ -1,198 +1,396 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>推箱子小游戏</title>
-    <style>
-        *{margin:0;padding:0;box-sizing:border-box;font-family:"Microsoft Yahei",sans-serif}
-        body{background:#2c3e50;display:flex;flex-direction:column;align-items:center;padding:30px;color:#fff}
-        h1{margin-bottom:10px}
-        .info{margin-bottom:15px;font-size:16px}
-        #gameBox{
-            background:#34495e;
-            padding:12px;
-            border-radius:8px;
-        }
-        .row{display:flex}
-        .cell{
-            width:42px;height:42px;
-            display:flex;align-items:center;justify-content:center;
-            font-size:28px;
-        }
-        .wall{background:#7f8c8d}
-        .floor{background:#bdc3c7}
-        .target{background:#f1c40f}
-        .btn-group{margin-top:20px;display:flex;gap:10px}
-        button{
-            padding:8px 18px;border:none;border-radius:4px;
-            background:#3498db;color:#fff;font-size:15px;cursor:pointer
-        }
-        button:hover{background:#2980b9}
-        .tip{margin-top:12px;font-size:14px;color:#ccc}
-    </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>流光踏屿 - 古风跑酷</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;font-family:"Microsoft Yahei",sans-serif}
+body{background:#1a1a2e;display:flex;flex-direction:column;align-items:center;padding:12px;color:#fff}
+#gameWrap{position:relative;border:2px solid #776b5d;border-radius:8px;overflow:hidden}
+canvas{display:block;background:linear-gradient(180deg,#73a8c2,#b8d2bc,#e8d9bc)}
+.ui-panel{position:absolute;top:0;left:0;width:100%;height:100%;background:rgba(20,25,40,0.85);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:10}
+.hidden{display:none !important;}
+.title{font-size:42px;color:#ffe8bc;text-shadow:0 0 12px #ffd788;margin-bottom:24px}
+.desc{font-size:16px;color:#ddd;margin-bottom:20px}
+.btn{padding:12px 28px;font-size:18px;margin:8px;border:none;border-radius:6px;background:#c49863;color:#111;cursor:pointer}
+.btn:hover{background:#ddb37a}
+.level-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:10px;margin:16px 0;max-width:620px}
+.level-btn{width:60px;height:60px;font-size:20px;border-radius:4px;border:1px solid #887;cursor:pointer;background:#3a3a52;color:#fff}
+.level-btn.unlock{background:#c49863;color:#111}
+.level-btn.lock{background:#222;color:#666;cursor:not-allowed}
+.info-bar{position:absolute;top:8px;left:8px;color:#222;font-size:18px;font-weight:bold;z-index:2}
+#fullBtn{position:absolute;top:8px;right:8px;z-index:2}
+</style>
 </head>
 <body>
-    <h1>推箱子</h1>
-    <div class="info">步数：<span id="step">0</span></div>
-    <div id="gameBox"></div>
-    <div class="btn-group">
-        <button onclick="resetLevel()">重置关卡</button>
-        <button onclick="nextLevel()">下一关</button>
+<div id="gameWrap">
+    <canvas id="game"></canvas>
+    <div class="info-bar">分数：<span id="score">0</span>｜关卡：<span id="curLv">1</span>/30</div>
+    <button class="btn" id="fullBtn">全屏</button>
+
+    <!-- 开始选关界面 -->
+    <div id="startPanel" class="ui-panel">
+        <div class="title">流光踏屿</div>
+        <div class="desc">空格 / 点击画面跳跃｜躲避障碍，收集流光通关</div>
+        <div class="level-grid" id="levelGrid"></div>
+        <div class="desc">已解锁关卡：<span id="unlockTip">1</span>/30</div>
     </div>
-    <div class="tip">键盘方向键 ↑ ↓ ← → 移动角色</div>
+
+    <!-- 游戏结束面板 -->
+    <div id="overPanel" class="ui-panel hidden">
+        <div class="title">踏屿终止</div>
+        <div class="desc">本局分数：<span id="overScore">0</span></div>
+        <div class="desc" id="passTip"></div>
+        <button class="btn" id="restartBtn">重新本关</button>
+        <button class="btn" id="backSelBtn">返回选关</button>
+    </div>
+</div>
 
 <script>
-// 地图定义：0空地 1墙 2箱子 3目标点 4玩家
-const levels = [
-[
-    [1,1,1,1,1,1,1],
-    [1,0,0,0,0,0,1],
-    [1,0,2,0,2,0,1],
-    [1,0,0,4,0,0,1],
-    [1,0,2,0,3,0,1],
-    [1,0,3,0,3,0,1],
-    [1,1,1,1,1,1,1]
-],
-[
-    [1,1,1,1,1,1,1,1],
-    [1,0,0,0,0,0,0,1],
-    [1,0,2,0,2,0,0,1],
-    [1,0,0,0,0,2,0,1],
-    [1,0,4,0,0,0,0,1],
-    [1,3,0,3,0,3,0,1],
-    [1,1,1,1,1,1,1,1]
-]
-];
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+const scoreDom = document.getElementById('score');
+const curLvDom = document.getElementById('curLv');
+const startPanel = document.getElementById('startPanel');
+const overPanel = document.getElementById('overPanel');
+const overScoreDom = document.getElementById('overScore');
+const passTipDom = document.getElementById('passTip');
+const restartBtn = document.getElementById('restartBtn');
+const backSelBtn = document.getElementById('backSelBtn');
+const levelGrid = document.getElementById('levelGrid');
+const unlockTipDom = document.getElementById('unlockTip');
+const fullBtn = document.getElementById('fullBtn');
 
-let currentLv = 0;
-let map = [];
-let playerX,playerY;
-let stepCount = 0;
+//画布尺寸
+const W = 1100;
+const H = 520;
+canvas.width = W;
+canvas.height = H;
 
-// 克隆地图
-function cloneMap(lv){
-    const src = levels[lv];
-    let arr = [];
-    for(let y=0;y<src.length;y++){
-        arr.push([...src[y]]);
-    }
-    return arr;
-}
+//存档：最大解锁关卡，本地存储
+let maxUnlockLv = parseInt(localStorage.getItem('liuguang_maxlv') || '1');
+let currentLevel = 1;
+let score = 0;
+let targetScore = 0; //本关通关目标分数
+let gameRunning = false;
 
-// 渲染游戏
-function render(){
-    const dom = document.getElementById("gameBox");
-    dom.innerHTML = "";
-    for(let y=0;y<map.length;y++){
-        const divRow = document.createElement("div");
-        divRow.className = "row";
-        for(let x=0;x<map[y].length;x++){
-            const cell = document.createElement("div");
-            cell.className = "cell";
-            let val = map[y][x];
-            if(val===1) cell.classList.add("wall");
-            else if(val===3) cell.classList.add("target");
-            else cell.classList.add("floor");
+//玩家角色
+const player = {
+    x:120,
+    y:H-130,
+    w:48,
+    h:64,
+    vy:0,
+    gravity:0.62,
+    jumpPower:-14,
+    isJump:false,
+    frame:0,
+    frameTimer:0
+};
 
-            if(val===4){ cell.innerText="🧑"; playerX=x;playerY=y; }
-            else if(val===2){ cell.innerText="📦"; }
-            else if(val===5){ cell.innerText="📦"; } //箱子在目标点
-            else if(val===6){ cell.innerText="🧑"; } //玩家站目标点
-            divRow.appendChild(cell);
-        }
-        dom.appendChild(divRow);
-    }
-    document.getElementById("step").innerText = stepCount;
-}
+let speed = 6;
+let groundY = H - 70;
 
-// 加载关卡
-function loadLevel(lvIndex){
-    if(lvIndex >= levels.length){
-        alert("恭喜！全部关卡通关！");
-        currentLv = 0;
-    }
-    currentLv = lvIndex;
-    stepCount = 0;
-    map = cloneMap(currentLv);
-    //处理目标点上玩家/箱子标记
-    for(let y=0;y<map.length;y++){
-        for(let x=0;x<map[y].length;x++){
-            if(levels[currentLv][y][x]===3){
-                if(map[y][x]===2) map[y][x]=5;
-                if(map[y][x]===4) map[y][x]=6;
+//游戏对象数组
+let obstacles = [];
+let items = [];
+let clouds = [];
+let bamboos = [];
+let roofs = [];
+
+//初始化关卡按钮
+function buildLevelSelect(){
+    levelGrid.innerHTML = '';
+    for(let i=1;i<=30;i++){
+        let b = document.createElement('button');
+        b.className = 'level-btn ' + (i<=maxUnlockLv?'unlock':'lock');
+        b.innerText = i;
+        if(i<=maxUnlockLv){
+            b.onclick = ()=>{
+                currentLevel = i;
+                startGame();
             }
         }
+        levelGrid.appendChild(b);
     }
-    render();
+    unlockTipDom.innerText = maxUnlockLv;
 }
 
-function resetLevel(){ loadLevel(currentLv); }
-function nextLevel(){ loadLevel(currentLv+1); }
+//生成本关随机关卡
+function generateLevel(lv){
+    obstacles = []; items = []; clouds = []; bamboos = []; roofs = [];
+    speed = 5 + lv*0.35;
+    targetScore = 180 + lv * 110; //通关需要分数
+    player.y = groundY - player.h;
+    player.vy = 0; player.isJump = false;
+    score = 0;
 
-// 判断胜利
-function checkWin(){
-    for(let y=0;y<map.length;y++){
-        for(let x=0;x<map[y].length;x++){
-            if(map[y][x]===2) return false;
+    //背景装饰
+    for(let i=0;i<7;i++){
+        clouds.push({
+            x: Math.random()*W*1.5,
+            y:20+Math.random()*140,
+            s:0.4+Math.random()*0.6
+        })
+    }
+    for(let i=0;i<12;i++){
+        bamboos.push({
+            x:Math.random()*W*2,
+            h:80+Math.random()*110
+        })
+    }
+    for(let i=0;i<5;i++){
+        roofs.push({
+            x:Math.random()*W*2,
+            h:45+Math.random()*65
+        })
+    }
+
+    //生成障碍物与收集物
+    let ox = W + 80;
+    for(let i=0;i< 22+lv*2;i++){
+        let type = Math.random()>0.65?'rock':'wall';
+        let ow = type==='rock'?42:64;
+        let oh = type==='rock'?48:72;
+        obstacles.push({x:ox,y:groundY-oh,w:ow,h:oh,t:type});
+        ox += 110 + Math.random()*160;
+
+        //随机生成流光收集物
+        if(Math.random()>0.42){
+            items.push({
+                x:ox - 40,
+                y: groundY - 110 - Math.random()*90,
+                r:14,
+                get:false
+            })
         }
     }
-    setTimeout(()=>{alert(`第${currentLv+1}关通关！`);nextLevel();},200);
 }
 
-//移动 dx,dy
-function move(dx,dy){
-    let nx = playerX+dx;
-    let ny = playerY+dy;
-    let cur = map[playerY][playerX];
-    let next = map[ny][nx];
-
-    if(next === 1) return; //撞墙
-
-    //保存当前格子原本是不是目标
-    const isCurTarget = (cur===6);
-    const isNextTarget = (next===3 || next===5);
-
-    //推箱子 next=2普通箱子 next=5箱子在目标
-    if(next===2 || next===5){
-        let nnx = nx+dx;
-        let nny = ny+dy;
-        let nn = map[nny][nnx];
-        if(nn===1 || nn===2 || nn===5) return; //箱子前方墙/箱子推不动
-
-        //箱子移动
-        if(nn===3) map[nny][nnx]=5; //推到目标点
-        else map[nny][nnx]=2;
-
-        //原箱子位置
-        if(next===5) map[ny][nx]=3;
-        else map[ny][nx]=0;
-    }
-
-    //玩家离开旧位置
-    if(isCurTarget) map[playerY][playerX]=3;
-    else map[playerY][playerX]=0;
-
-    //玩家新位置
-    if(isNextTarget) map[ny][nx]=6;
-    else map[ny][nx]=4;
-
-    stepCount++;
-    render();
-    checkWin();
+function startGame(){
+    startPanel.classList.add('hidden');
+    overPanel.classList.add('hidden');
+    generateLevel(currentLevel);
+    gameRunning = true;
+    scoreDom.innerText = score;
+    curLvDom.innerText = currentLevel;
 }
 
-document.addEventListener("keydown",(e)=>{
-    switch(e.key){
-        case "ArrowUp": move(0,-1);break;
-        case "ArrowDown": move(0,1);break;
-        case "ArrowLeft": move(-1,0);break;
-        case "ArrowRight": move(1,0);break;
+function gameOver(isPass){
+    gameRunning = false;
+    overScoreDom.innerText = score;
+    if(isPass){
+        passTipDom.innerText = '✅本关通关！';
+        if(currentLevel >= maxUnlockLv && currentLevel<30){
+            maxUnlockLv = currentLevel+1;
+            localStorage.setItem('liuguang_maxlv',String(maxUnlockLv));
+        }
+    }else{
+        passTipDom.innerText = '💥撞上障碍，游戏结束';
     }
+    overPanel.classList.remove('hidden');
+    buildLevelSelect();
+}
+
+//跳跃
+function doJump(){
+    if(!gameRunning) return;
+    if(!player.isJump){
+        player.vy = player.jumpPower;
+        player.isJump = true;
+    }
+}
+
+//输入监听
+document.addEventListener('keydown',e=>{
+    if(e.code==='Space'){ e.preventDefault(); doJump(); }
 })
+canvas.onclick = doJump;
 
-//初始化第一关
-loadLevel(0);
+restartBtn.onclick = ()=> startGame();
+backSelBtn.onclick = ()=>{
+    overPanel.classList.add('hidden');
+    startPanel.classList.remove('hidden');
+}
+
+//全屏
+fullBtn.onclick = ()=>{
+    if(!document.fullscreenElement){
+        document.getElementById('gameWrap').requestFullscreen();
+    }else document.exitFullscreen();
+}
+
+//碰撞检测
+function rectCollision(a,b){
+    return a.x < b.x+b.w && a.x+a.w> b.x && a.y < b.y+b.h && a.y+a.h> b.y;
+}
+
+//绘画古风背景元素
+function drawBackground(){
+    let grad = ctx.createLinearGradient(0,0,0,H);
+    grad.addColorStop(0,'#73a8c2');
+    grad.addColorStop(0.5,'#b8d2bc');
+    grad.addColorStop(1,'#e8d9bc');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0,0,W,H);
+
+    //云朵
+    ctx.fillStyle = 'rgba(255,255,255,0.65)';
+    clouds.forEach(c=>{
+        ctx.beginPath();
+        ctx.arc(c.x, c.y, 22*c.s,0,Math.PI*2);
+        ctx.arc(c.x+24*c.s,c.y-6*c.s,16*c.s,0,Math.PI*2);
+        ctx.arc(c.x-20*c.s,c.y+4*c.s,18*c.s,0,Math.PI*2);
+        ctx.fill();
+        c.x -= speed*0.22;
+        if(c.x < -80) c.x = W + 120;
+    })
+
+    //竹子
+    ctx.fillStyle = '#496b49';
+    bamboos.forEach(b=>{
+        ctx.fillRect(b.x, groundY - b.h, 8, b.h);
+        b.x -= speed*0.45;
+        if(b.x < -20) b.x = W+100;
+    })
+
+    //屋檐
+    ctx.fillStyle='#8c6c54';
+    roofs.forEach(r=>{
+        ctx.beginPath();
+        ctx.moveTo(r.x, groundY - r.h);
+        ctx.lineTo(r.x+55, groundY - r.h -28);
+        ctx.lineTo(r.x+110, groundY - r.h);
+        ctx.fill();
+        r.x -= speed*0.33;
+        if(r.x < -130) r.x = W+120;
+    })
+
+    //地面
+    ctx.fillStyle='#947c64';
+    ctx.fillRect(0,groundY,W,H-groundY);
+    ctx.fillStyle='#7c6854';
+    for(let i=0;i<W;i+=32){
+        ctx.fillRect(i,groundY,14,4);
+    }
+}
+
+//绘制古风卡通角色
+function drawPlayer(){
+    player.frameTimer++;
+    if(player.frameTimer>7){
+        player.frameTimer=0;
+        player.frame = (player.frame+1)%4;
+    }
+    ctx.save();
+    ctx.translate(player.x,player.y);
+    //衣袍
+    ctx.fillStyle='#426794';
+    ctx.fillRect(8,22,32,42);
+    //头
+    ctx.fillStyle='#ffdfc4';
+    ctx.beginPath();
+    ctx.arc(24,14,14,0,Math.PI*2); ctx.fill();
+    //头发
+    ctx.fillStyle='#222';
+    ctx.beginPath();
+    ctx.arc(24,9,12,Math.PI,Math.PI*2); ctx.fill();
+
+    //跑动腿部动画
+    ctx.fillStyle='#2c3e60';
+    let legOff = Math.sin(player.frame*1.6)*8;
+    ctx.fillRect(12,54,9,12+legOff);
+    ctx.fillRect(27,54,9,12-legOff);
+    ctx.restore();
+}
+
+function drawObstacles(){
+    obstacles.forEach(o=>{
+        if(o.t==='rock'){
+            ctx.fillStyle='#777777';
+            ctx.beginPath();
+            ctx.moveTo(o.x+o.w*0.5,o.y);
+            ctx.lineTo(o.x+o.w,o.y+o.h);
+            ctx.lineTo(o.x,o.y+o.h);
+            ctx.closePath(); ctx.fill();
+        }else{
+            ctx.fillStyle='#6b5b4f';
+            ctx.fillRect(o.x,o.y,o.w,o.h);
+        }
+    })
+}
+
+function drawItems(){
+    items.forEach(it=>{
+        if(it.get) return;
+        ctx.save();
+        ctx.globalAlpha = 0.82;
+        ctx.fillStyle='#ffdd77';
+        ctx.beginPath();
+        ctx.arc(it.x,it.y,it.r,0,Math.PI*2);ctx.fill();
+        ctx.fillStyle='#fff9cc';
+        ctx.beginPath();
+        ctx.arc(it.x-4,it.y-4,it.r*0.45,0,Math.PI*2);ctx.fill();
+        ctx.restore();
+    })
+}
+
+function gameLoop(){
+    drawBackground();
+    if(gameRunning){
+        //物理
+        player.vy += player.gravity;
+        player.y += player.vy;
+        if(player.y >= groundY-player.h){
+            player.y = groundY-player.h;
+            player.vy = 0;
+            player.isJump = false;
+        }
+
+        //障碍物移动
+        obstacles.forEach(o=>{ o.x -= speed; })
+        obstacles = obstacles.filter(o=>o.x > -120);
+
+        //收集物移动
+        items.forEach(it=>{ it.x -= speed; })
+        items = items.filter(it=> it.x>-30 && !it.get);
+
+        //碰撞障碍
+        for(let obs of obstacles){
+            if(rectCollision(player,obs)){
+                gameOver(false);
+            }
+        }
+        //碰撞收集物加分
+        items.forEach(it=>{
+            if(!it.get){
+                let dx = (player.x+player.w/2) - it.x;
+                let dy = (player.y+player.h/2) - it.y;
+                let dist = Math.sqrt(dx*dx+dy*dy);
+                if(dist < it.r+26){
+                    it.get = true;
+                    score += 12;
+                    scoreDom.innerText = score;
+                }
+            }
+        })
+
+        //判断通关：达到目标分数
+        if(score >= targetScore){
+            gameOver(true);
+        }
+    }
+
+    drawObstacles();
+    drawItems();
+    drawPlayer();
+    requestAnimationFrame(gameLoop);
+}
+
+//初始化
+buildLevelSelect();
+gameLoop();
 </script>
 </body>
 </html>
